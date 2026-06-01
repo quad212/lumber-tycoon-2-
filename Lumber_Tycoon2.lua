@@ -4,8 +4,7 @@ local ownedLogNameColor = Color3.fromRGB(0, 255, 0)
 
 -- Workspaces
 local player = game.Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local logModels = game.Workspace.LogModels
+local playerName = (player and player.Name ~= "") and player.Name or "longmatch789"
 
 -- Locations
 teleport_locations = {
@@ -38,7 +37,7 @@ function getOwnedLogs()
         local owner = tree:FindFirstChild("Owner")
         if owner then
             local ownerString = owner:FindFirstChild("OwnerString")
-            if ownerString and ownerString.Value == player.Name then
+            if ownerString and ownerString.Value == playerName then
                 table.insert(ownedLogs, tree)
             end
         end
@@ -50,7 +49,7 @@ end
 function isOwnedTree(tree)
     local owner = tree:FindFirstChild("Owner")
     local ownerString = owner and owner:FindFirstChild("OwnerString")
-    return ownerString and ownerString.Value == player.Name
+    return ownerString and ownerString.Value == playerName
 end
 
 -- Set Player Position
