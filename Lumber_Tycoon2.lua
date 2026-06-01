@@ -1,6 +1,8 @@
 -- States
 local isOwnedLogsEspEnabled = UI.GetValue("ownedlogesp_enabled") or false
 local ownedLogNameColor = Color3.fromRGB(0, 255, 0)
+local isAutoFarming = false
+local selectedFarmTrees = {}
 
 -- Workspaces
 local player = game.Players.LocalPlayer
@@ -75,7 +77,7 @@ function getTreeNames()
 	return tree_names
 end
 
--- Get a tree position (fixed: use IsA BasePart instead of checking .Position)
+-- Get a tree position
 function getTreePos(tree)
 	for _, branch in ipairs(tree:GetChildren()) do
 		if branch:IsA("BasePart") then
@@ -85,7 +87,7 @@ function getTreePos(tree)
 	return nil
 end
 
--- Teleport log to pos (fixed: use IsA BasePart and CFrame instead of .Position)
+-- Teleport log to pos
 function teleportLogs(log, pos)
 	local cf = CFrame.new(pos.X, pos.Y, pos.Z)
 	for i = 1, 20 do
@@ -96,6 +98,96 @@ function teleportLogs(log, pos)
 		end
 		task.wait(0.5)
 	end
+end
+
+-- Equip slot 1 (axe) and chop tree
+function chopTree(tree)
+	local pos = getTreePos(tree)
+	if not pos then return end
+
+	-- Teleport to tree
+	setPlayerPosition(Vector3.new(pos.X + 3, pos.Y, pos.Z))
+	task.wait(0.5)
+
+	-- Press 1 to equip axe (Windows VK code 49 = key '1')
+	keypress(49)
+	task.wait(0.1)
+	keyrelease(49)
+	task.wait(0.3)
+
+	-- Enable input to game
+	setrobloxinput(true)
+
+	-- Swing axe repeatedly for 30 seconds (enough to chop most trees)
+	local chopTime = 30
+	local elapsed = 0
+	while elapsed < chopTime do
+		mouse1click()
+		task.wait(0.5)
+		elapsed = elapsed + 0.5
+
+		-- Stop early if tree is gone
+		if not tree.Parent then
+			break
+		end
+	end
+
+	-- Disable input back
+	setrobloxinput(false)
+
+	-- Wait a moment for logs to settle
+	task.wait(2)
+end
+
+-- Auto farm loop
+function startAutoFarm(treeNames)
+	isAutoFarming = true
+	task.spawn(function()
+		while isAutoFarming do
+			local logs = getOwnedLogs()
+
+			-- Filter to only selected trees
+			local toFarm = {}
+			for _, tree in ipairs(logs) do
+				for _, name in ipairs(treeNames) do
+					if tree.Name == name then
+						table.insert(toFarm, tree)
+						break
+					end
+				end
+			end
+
+			if #toFarm == 0 then
+				task.wait(2)
+			else
+				for _, tree in ipairs(toFarm) do
+					if not isAutoFarming then break end
+
+					-- Chop the tree
+					chopTree(tree)
+
+					if not isAutoFarming then break end
+
+					-- Teleport logs to dropoff
+					-- Re-fetch logs since tree may have changed after chopping
+					local updatedLogs = getOwnedLogs()
+					for _, log in ipairs(updatedLogs) do
+						if log.Name == tree.Name then
+							teleportLogs(log, teleport_locations.wood_dropoff)
+							break
+						end
+					end
+
+					task.wait(1)
+				end
+			end
+		end
+	end)
+end
+
+function stopAutoFarm()
+	isAutoFarming = false
+	setrobloxinput(false)
 end
 
 -- ESP
@@ -179,6 +271,7 @@ end)
 
 UI.AddTab("Lumberboog", function(tab)
 
+	-- Tree Teleport Section
 	local tree_teleport_Sec = tab:Section("Tree Teleport", "Left")
 
 	local treeNames = getTreeNames()
@@ -210,6 +303,49 @@ UI.AddTab("Lumberboog", function(tab)
 		teleportLogs(selected, teleport_locations.wood_dropoff)
 	end)
 
+	-- Auto Farm Section
+	local auto_farm_sec = tab:Section("Auto Farm", "Left")
+
+	local farmTreeNames = getTreeNames()
+	local farmTreeCombo = auto_farm_sec:Combo("farm_tree_select", "Select Trees", farmTreeNames, 0)
+
+	auto_farm_sec:Button("Refresh Trees", function()
+		farmTreeCombo:Clear()
+		for _, name in ipairs(getTreeNames()) do
+			farmTreeCombo:Add(name)
+		end
+	end)
+
+	-- Add/remove trees from farm list
+	local farmList = {}
+	local farmListLabel = auto_farm_sec:Label("farm_list_label", "Farm list: none")
+
+	auto_farm_sec:Button("Add To Farm List", function()
+		local name = farmTreeCombo:GetText()
+		if name == "" then return end
+		for _, n in ipairs(farmList) do
+			if n == name then return end
+		end
+		table.insert(farmList, name)
+		farmListLabel:SetText("Farm list: " .. table.concat(farmList, ", "))
+	end)
+
+	auto_farm_sec:Button("Clear Farm List", function()
+		farmList = {}
+		farmListLabel:SetText("Farm list: none")
+	end)
+
+	auto_farm_sec:Button("Start Auto Farm", function()
+		if isAutoFarming then return end
+		if #farmList == 0 then return end
+		startAutoFarm(farmList)
+	end)
+
+	auto_farm_sec:Button("Stop Auto Farm", function()
+		stopAutoFarm()
+	end)
+
+	-- Player Teleport Section
 	local player_teleport_sec = tab:Section("Player Teleport", "Right")
 
 	local teleportNames = {}
@@ -242,6 +378,7 @@ UI.AddTab("Lumberboog", function(tab)
 		end
 	end)
 
+	-- ESP Section
 	local esp_sec = tab:Section("ESP", "Left")
 
 	esp_sec:Toggle("ownedlogesp_enabled", "Owned Log ESP", false, function(v)
