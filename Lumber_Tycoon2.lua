@@ -1,8 +1,6 @@
 -- States
 local isOwnedLogsEspEnabled = UI.GetValue("ownedlogesp_enabled") or false
 local ownedLogNameColor = Color3.fromRGB(0, 255, 0)
-local isAutoFarming = false
-local farmList = {}
 
 -- Workspaces
 local player = game.Players.LocalPlayer
@@ -16,7 +14,7 @@ teleport_locations = {
 	fancy_furnishings = Vector3.new(490.67, 3.20, -1693.19),
 	boxed_cars = Vector3.new(511.90, 3.19, -1483.77),
 	bobs_shack = Vector3.new(248.06, 8.40, -2538.49),
-	links_logic = Vector3.new(4606.95, 7, -766.94),
+	links_logic = Vector3.new(4606.95, 7, -766.94), 
 	wood_dropoff = Vector3.new(322.27, -2.80, 136.83)
 }
 biome_teleport_locations = {
@@ -35,40 +33,47 @@ biome_teleport_locations = {
 
 -- Get Owned Logs
 function getOwnedLogs()
-	local ownedLogs = {}
-	for _, tree in ipairs(logModels:GetChildren()) do
-		local owner = tree:FindFirstChild("Owner")
-		if owner then
-			local ownerString = owner:FindFirstChild("OwnerString")
-			if ownerString and ownerString.Value == player.Name then
-				table.insert(ownedLogs, tree)
-			end
-		end
-	end
-	return ownedLogs
+    local ownedLogs = {}
+    for _, tree in logModels:GetChildren() do
+        local owner = tree:FindFirstChild("Owner")
+        if owner then
+            local ownerString = owner:FindFirstChild("OwnerString")
+            if ownerString and ownerString.Value == player.Name then
+                table.insert(ownedLogs, tree)
+            end
+        end
+    end
+    return ownedLogs
 end
 
--- Check if specified tree is owned
+-- Check if specified tree is owned (For ESP)
 function isOwnedTree(tree)
-	local owner = tree:FindFirstChild("Owner")
-	local ownerString = owner and owner:FindFirstChild("OwnerString")
-	return ownerString and ownerString.Value == player.Name
+    local owner = tree:FindFirstChild("Owner")
+    local ownerString = owner and owner:FindFirstChild("OwnerString")
+    return ownerString and ownerString.Value == player.Name
 end
 
 -- Set Player Position
 function setPlayerPosition(position)
-	local rootPart = character:WaitForChild("HumanoidRootPart")
-	rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-	rootPart.CFrame = CFrame.new(position.X, position.Y, position.Z)
+    local rootPart = character:WaitForChild("HumanoidRootPart")
+    rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    rootPart.CFrame = CFrame.new(position.X, position.Y, position.Z)
 end
 
--- Get tree names
+-- Get Player Position
+function getPlayerPosition()
+	local rootPart = character:WaitForChild("HumanoidRootPart")
+	local position = rootPart.Position
+    return position 
+end
+
+-- Get tree names (From owned logs for combobox)
 function getTreeNames()
-	local tree_names = {}
-	for _, tree in ipairs(getOwnedLogs()) do
-		table.insert(tree_names, tree.Name)
-	end
-	return tree_names
+    local tree_names = {}
+    for _, tree in ipairs(getOwnedLogs()) do
+        table.insert(tree_names, tree.Name)
+    end
+    return tree_names
 end
 
 -- Get a tree position
@@ -94,240 +99,145 @@ function teleportLogs(log, pos)
 	end
 end
 
--- Chop tree by simulating input
-function chopTree(tree)
-	local pos = getTreePos(tree)
-	if not pos then return end
-
-	-- Teleport next to tree
-	setPlayerPosition(Vector3.new(pos.X + 3, pos.Y, pos.Z))
-	task.wait(0.5)
-
-	-- Press 1 to equip axe
-	keypress(49)
-	task.wait(0.1)
-	keyrelease(49)
-	task.wait(0.3)
-
-	-- Send inputs to game and swing for 30 seconds
-	setrobloxinput(true)
-	local elapsed = 0
-	while elapsed < 30 do
-		if not isAutoFarming then break end
-		if not tree.Parent then break end
-		mouse1click()
-		task.wait(0.5)
-		elapsed = elapsed + 0.5
-	end
-	setrobloxinput(false)
-
-	task.wait(2)
-end
-
--- Auto farm loop
-function startAutoFarm()
-	isAutoFarming = true
-	task.spawn(function()
-		while isAutoFarming do
-			if #farmList == 0 then
-				task.wait(2)
-			else
-				local logs = getOwnedLogs()
-				local toFarm = {}
-				for _, tree in ipairs(logs) do
-					for _, name in ipairs(farmList) do
-						if tree.Name == name then
-							table.insert(toFarm, tree)
-							break
-						end
-					end
-				end
-
-				if #toFarm == 0 then
-					task.wait(2)
-				else
-					for _, tree in ipairs(toFarm) do
-						if not isAutoFarming then break end
-						chopTree(tree)
-						if not isAutoFarming then break end
-						-- Re-fetch and teleport logs to dropoff
-						for _, log in ipairs(getOwnedLogs()) do
-							if log.Name == tree.Name then
-								teleportLogs(log, teleport_locations.wood_dropoff)
-								break
-							end
-						end
-						task.wait(1)
-					end
-				end
-			end
-		end
-	end)
-end
-
-function stopAutoFarm()
-	isAutoFarming = false
-	setrobloxinput(false)
-end
-
 -- ESP
 local espList = {}
 
 local function addEspItem(part)
-	local addr = part
-	if espList[addr] then return end
-	local txt = Drawing.new("Text")
-	txt.Text = "Owned Loose Log"
-	txt.Size = 13
-	txt.Center = true
-	txt.Outline = true
-	txt.Color = Color3.fromRGB(0, 255, 0)
-	txt.Visible = false
-	espList[addr] = { part = part, txt = txt }
+    local addr = part
+    if espList[addr] then return end
+    local txt = Drawing.new("Text")
+    txt.Text = "Owned Loose Log"
+    txt.Size = 13
+    txt.Center = true
+    txt.Outline = true
+    txt.Color = Color3.fromRGB(0, 255, 0)
+    txt.Visible = false
+    espList[addr] = {
+        part = part,
+        txt = txt
+    }
 end
 
 local function removeEspItem(addr)
-	local t = espList[addr]
-	if t then
-		t.txt:Remove()
-		espList[addr] = nil
-	end
+    local t = espList[addr]
+    if t then
+        t.txt:Remove()
+        espList[addr] = nil
+    end
 end
 
 local lastScan = 0
 task.spawn(function()
-	while true do
-		local now = os.clock()
-		if now - lastScan >= 1 then
-			lastScan = now
-			for _, tree in ipairs(logModels:GetChildren()) do
-				if isOwnedTree(tree) then
-					for _, item in ipairs(tree:GetChildren()) do
-						if item:IsA("BasePart") and item.Name == "InnerWood" then
-							addEspItem(item)
-						end
-					end
-				end
-			end
-			for addr, t in pairs(espList) do
-				if not addr or not addr.Parent then
-					removeEspItem(addr)
-				end
-			end
-		end
-		task.wait(0.2)
-	end
+    while true do
+        local now = os.clock()
+        if now - lastScan >= 1 then
+            lastScan = now
+            for _, tree in ipairs(logModels:GetChildren()) do
+                if isOwnedTree(tree) then
+                    for _, item in ipairs(tree:GetChildren()) do
+                        if item:IsA("BasePart") and item.Name == "InnerWood" then
+                            addEspItem(item)
+                        end
+                    end
+                end
+            end
+            for addr, t in pairs(espList) do
+                if not addr or not addr.Parent then
+                    removeEspItem(addr)
+                end
+            end
+        end
+        task.wait(0.2)
+    end
 end)
 
 task.spawn(function()
-	while true do
-		if isOwnedLogsEspEnabled then
-			for _, item in pairs(espList) do
-				local part = item.part
-				if part and part.Parent then
+    while true do
+        if isOwnedLogsEspEnabled then
+            for _, item in pairs(espList) do
+                local part = item.part
+                if part and part.Parent then
 					item.txt.Color = ownedLogNameColor
-					local pos, vis = WorldToScreen(part.Position)
-					if vis then
-						item.txt.Position = Vector2.new(pos.X, pos.Y)
-						item.txt.Visible = true
-					else
-						item.txt.Visible = false
-					end
-				else
-					item.txt.Visible = false
-				end
-			end
-		else
-			for _, item in pairs(espList) do
-				item.txt.Visible = false
-			end
-		end
-		task.wait(0.016)
-	end
+                    local pos, vis = WorldToScreen(part.Position)
+                    if vis then
+                        item.txt.Position = Vector2.new(pos.X, pos.Y)
+                        item.txt.Visible = true
+                    else
+                        item.txt.Visible = false
+                    end
+                else
+                    item.txt.Visible = false
+                end
+            end
+        else
+            for _, item in pairs(espList) do
+                item.txt.Visible = false
+            end
+        end
+        task.wait(0.016)
+    end
 end)
 
 UI.AddTab("Lumberboog", function(tab)
+	-- Tree teleport Section
+    local tree_teleport_Sec = tab:Section("Tree Teleport", "Left")
 
-	-- Tree Teleport Section
-	local tree_teleport_Sec = tab:Section("Tree Teleport", "Left")
+    local treeNames = getTreeNames()
+    local ownedTreesCombo = tree_teleport_Sec:Combo("tree_select", "Owned Trees", treeNames, 0)
 
-	local treeNames = getTreeNames()
-	local ownedTreesCombo = tree_teleport_Sec:Combo("tree_select", "Owned Trees", treeNames, 0)
+    tree_teleport_Sec:Button("Refresh", function()
+        ownedTreesCombo:Clear()
+        for _, name in ipairs(getTreeNames()) do
+            ownedTreesCombo:Add(name)
+        end
+    end)
 
-	tree_teleport_Sec:Button("Refresh", function()
-		ownedTreesCombo:Clear()
-		for _, name in ipairs(getTreeNames()) do
-			ownedTreesCombo:Add(name)
-		end
-	end)
-
-	tree_teleport_Sec:Button("Teleport To Tree", function()
-		local idx = ownedTreesCombo.value + 1
-		local logs = getOwnedLogs()
-		local selected = logs[idx]
-		if not selected then return end
-		local pos = getTreePos(selected)
-		if pos then setPlayerPosition(pos) end
-	end)
+    tree_teleport_Sec:Button("Teleport To Tree", function()
+        local logs = getOwnedLogs()
+        print("Owned logs found:", #logs)
+        local idx = ownedTreesCombo.value + 1
+        print("Selected index:", idx)
+        local selected = logs[idx]
+        if not selected then
+            print("No tree selected")
+            return
+        end
+        local pos = getTreePos(selected)
+        print("Tree pos:", pos)
+        if pos then
+            setPlayerPosition(pos)
+        end
+    end)
 
 	tree_teleport_Sec:Button("Teleport Tree To Dropoff", function()
-		local idx = ownedTreesCombo.value + 1
 		local logs = getOwnedLogs()
-		local selected = logs[idx]
-		if not selected then return end
-		teleportLogs(selected, teleport_locations.wood_dropoff)
-	end)
-
-	-- Auto Farm Section
-	local auto_farm_sec = tab:Section("Auto Farm", "Left")
-
-	local farmTreeNames = getTreeNames()
-	local farmTreeCombo = auto_farm_sec:Combo("farm_tree_select", "Select Tree", farmTreeNames, 0)
-
-	auto_farm_sec:Button("Refresh Trees", function()
-		farmTreeCombo:Clear()
-		for _, name in ipairs(getTreeNames()) do
-			farmTreeCombo:Add(name)
-		end
-	end)
-
-	auto_farm_sec:Button("Add To Farm List", function()
-		local name = farmTreeCombo:GetText()
-		if not name or name == "" then return end
-		for _, n in ipairs(farmList) do
-			if n == name then return end
-		end
-		table.insert(farmList, name)
-	end)
-
-	auto_farm_sec:Button("Clear Farm List", function()
-		farmList = {}
-	end)
-
-	auto_farm_sec:Button("Start Auto Farm", function()
-		if isAutoFarming then return end
-		if #farmList == 0 then return end
-		startAutoFarm()
-	end)
-
-	auto_farm_sec:Button("Stop Auto Farm", function()
-		stopAutoFarm()
-	end)
+        print("Owned logs found:", #logs)
+		local idx = ownedTreesCombo.value + 1
+        print("Selected index:", idx)
+        local selected = logs[idx]
+        if not selected then
+            print("No tree selected")
+            return
+        end
+        teleportLogs(selected, teleport_locations.wood_dropoff)
+    end)
 
 	-- Player Teleport Section
 	local player_teleport_sec = tab:Section("Player Teleport", "Right")
 
 	local teleportNames = {}
 	for name, _ in pairs(teleport_locations) do
-		table.insert(teleportNames, name)
+	    table.insert(teleportNames, name)
 	end
-	table.sort(teleportNames)
+    table.sort(teleportNames)
 	local tpCombo = player_teleport_sec:Combo("tp_select", "Locations", teleportNames, 0)
 
 	player_teleport_sec:Button("Teleport", function()
-		local selectedName = tpCombo:GetText()
-		local position = teleport_locations[selectedName]
-		if position then setPlayerPosition(position) end
+	    local selectedName = tpCombo:GetText()
+	    local position = teleport_locations[selectedName]
+	    if position then
+	        setPlayerPosition(position)
+	    end
 	end)
 
 	local teleportBiomesNames = {}
@@ -339,18 +249,18 @@ UI.AddTab("Lumberboog", function(tab)
 
 	player_teleport_sec:Button("Teleport Biome", function()
 		local selectedName = tpBiomeCombo:GetText()
-		local position = biome_teleport_locations[selectedName]
-		if position then setPlayerPosition(position) end
+	    local position = biome_teleport_locations[selectedName]
+	    if position then
+	        setPlayerPosition(position)
+	    end
 	end)
 
 	-- ESP Section
-	local esp_sec = tab:Section("ESP", "Left")
-
+    local esp_sec = tab:Section("ESP", "Left")
 	esp_sec:Toggle("ownedlogesp_enabled", "Owned Log ESP", false, function(v)
-		isOwnedLogsEspEnabled = v
-	end)
-
+        isOwnedLogsEspEnabled = v
+    end)
 	esp_sec:ColorPicker("owned_log_color", 1, 1, 1, 1, function(c)
-		ownedLogNameColor = c
-	end)
+        ownedLogNameColor = c
+    end)
 end)
