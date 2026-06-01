@@ -3,7 +3,7 @@ local isOwnedLogsEspEnabled = UI.GetValue("ownedlogesp_enabled") or false
 local ownedLogNameColor = Color3.fromRGB(0, 255, 0)
 
 -- Workspaces
-local player = game.Players.LocalPlayer
+local player = game:GetService("Players").LocalPlayer
 local logModels = game.Workspace.LogModels
 
 -- Keep character always up to date
