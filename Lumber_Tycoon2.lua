@@ -1,16 +1,30 @@
--- States
-local isOwnedLogsEspEnabled = UI.GetValue("ownedlogesp_enabled") or false
-local ownedLogNameColor = Color3.fromRGB(0, 255, 0)
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
--- Workspaces
-local player = game:GetService("Players").LocalPlayer
-local logModels = game.Workspace.LogModels
+-- Wait for local player
+local player = Players.LocalPlayer
+if not player then
+    player = Players.PlayerAdded:Wait()
+end
 
--- Keep character always up to date
-local character = player.Character or player.CharacterAdded:Wait()
+-- Wait for character
+local character = player.Character
+if not character then
+    character = player.CharacterAdded:Wait()
+end
+
+-- Keep character updated on respawn
 player.CharacterAdded:Connect(function(newChar)
     character = newChar
 end)
+
+-- Wait for workspace to have LogModels
+local logModels = game.Workspace:WaitForChild("LogModels")
+
+-- States
+local isOwnedLogsEspEnabled = UI.GetValue("ownedlogesp_enabled") or false
+local ownedLogNameColor = Color3.fromRGB(0, 255, 0)
 
 -- Locations
 local teleport_locations = {
@@ -37,53 +51,39 @@ local biome_teleport_locations = {
     volcano             = Vector3.new(-1588.55, 623, 1058.12)
 }
 
--- Teleport player using multiple fallback methods
+-- Teleport player to a position
 local function setPlayerPosition(position)
-    local char = player.Character or player.CharacterAdded:Wait()
-    local root = char:WaitForChild("HumanoidRootPart")
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
     local cf = CFrame.new(position)
 
-    local ok
-
-    -- Method 1: direct CFrame
-    ok = pcall(function()
+    -- Try method 1: direct CFrame set twice
+    local ok = pcall(function()
         root.CFrame = cf
     end)
     if ok then
         task.wait(0.1)
-        root.CFrame = cf
+        pcall(function() root.CFrame = cf end)
         return
     end
 
-    -- Method 2: zero velocity then CFrame
-    ok = pcall(function()
+    -- Try method 2: zero velocity first
+    pcall(function()
         root.AssemblyLinearVelocity = Vector3.zero
         root.CFrame = cf
     end)
-    if ok then return end
-
-    -- Method 3: old velocity API
-    ok = pcall(function()
-        root.Velocity = Vector3.zero
-        root.CFrame = cf
-    end)
-    if ok then return end
-
-    -- Method 4: Humanoid MoveTo
-    ok = pcall(function()
-        local hum = char:WaitForChild("Humanoid")
-        hum:MoveTo(position)
-    end)
-    if ok then return end
-
-    warn("All teleport methods failed")
 end
 
--- Check if player owns a given tree
+-- Check if a tree is owned by the local player
 local function isOwnedTree(tree)
     local owner = tree:FindFirstChild("Owner")
-    local ownerString = owner and owner:FindFirstChild("OwnerString")
-    return ownerString and ownerString.Value == player.Name
+    if not owner then return false end
+    local ownerString = owner:FindFirstChild("OwnerString")
+    if not ownerString then return false end
+    return ownerString.Value == player.Name
 end
 
 -- Return all logs owned by the local player
@@ -97,7 +97,7 @@ local function getOwnedLogs()
     return ownedLogs
 end
 
--- Return names of owned logs (for combobox)
+-- Return names of owned logs
 local function getTreeNames()
     local names = {}
     for _, tree in ipairs(getOwnedLogs()) do
@@ -113,9 +113,10 @@ local function getTreePos(tree)
             return part.Position
         end
     end
+    return nil
 end
 
--- Teleport all parts of a log to a position over time
+-- Teleport all parts of a log to a position
 local function teleportLogs(log, pos)
     local cf = CFrame.new(pos)
     for i = 1, 20 do
@@ -135,62 +136,71 @@ local espList = {}
 
 local function addEspItem(part)
     if espList[part] then return end
-    local txt = Drawing.new("Text")
-    txt.Text    = "Owned Log"
-    txt.Size    = 13
-    txt.Center  = true
-    txt.Outline = true
-    txt.Color   = ownedLogNameColor
-    txt.Visible = false
+    local ok, txt = pcall(function()
+        local t = Drawing.new("Text")
+        t.Text    = "Owned Log"
+        t.Size    = 13
+        t.Center  = true
+        t.Outline = true
+        t.Color   = ownedLogNameColor
+        t.Visible = false
+        return t
+    end)
+    if not ok then return end
     espList[part] = { part = part, txt = txt }
 end
 
 local function removeEspItem(part)
     local entry = espList[part]
-    if entry then
-        entry.txt:Remove()
-        espList[part] = nil
-    end
+    if not entry then return end
+    pcall(function() entry.txt:Remove() end)
+    espList[part] = nil
 end
 
+-- Scan for owned logs and update ESP list
 task.spawn(function()
     local lastScan = 0
     while true do
         local now = os.clock()
         if now - lastScan >= 1 then
             lastScan = now
-            for _, tree in ipairs(logModels:GetChildren()) do
-                if isOwnedTree(tree) then
-                    for _, part in ipairs(tree:GetChildren()) do
-                        if part:IsA("BasePart") and part.Name == "InnerWood" then
-                            addEspItem(part)
+            pcall(function()
+                for _, tree in ipairs(logModels:GetChildren()) do
+                    if isOwnedTree(tree) then
+                        for _, part in ipairs(tree:GetChildren()) do
+                            if part:IsA("BasePart") and part.Name == "InnerWood" then
+                                addEspItem(part)
+                            end
                         end
                     end
                 end
-            end
-            for part in pairs(espList) do
-                if not part or not part.Parent then
-                    removeEspItem(part)
+                for part in pairs(espList) do
+                    if not part or not part.Parent then
+                        removeEspItem(part)
+                    end
                 end
-            end
+            end)
         end
         task.wait(0.2)
     end
 end)
 
+-- Render ESP every frame
 task.spawn(function()
     while true do
-        for _, item in pairs(espList) do
-            local part = item.part
-            if isOwnedLogsEspEnabled and part and part.Parent then
-                item.txt.Color = ownedLogNameColor
-                local pos, vis = WorldToScreen(part.Position)
-                item.txt.Position = Vector2.new(pos.X, pos.Y)
-                item.txt.Visible = vis
-            else
-                item.txt.Visible = false
+        pcall(function()
+            for _, item in pairs(espList) do
+                local part = item.part
+                if isOwnedLogsEspEnabled and part and part.Parent then
+                    item.txt.Color = ownedLogNameColor
+                    local pos, vis = WorldToScreen(part.Position)
+                    item.txt.Position = Vector2.new(pos.X, pos.Y)
+                    item.txt.Visible = vis
+                else
+                    item.txt.Visible = false
+                end
             end
-        end
+        end)
         task.wait(0.016)
     end
 end)
@@ -199,6 +209,7 @@ end)
 
 UI.AddTab("Lumberboog", function(tab)
 
+    -- Tree Teleport
     local treeSec = tab:Section("Tree Teleport", "Left")
 
     local treeCombo = treeSec:Combo("tree_select", "Owned Trees", getTreeNames(), 0)
@@ -212,19 +223,32 @@ UI.AddTab("Lumberboog", function(tab)
 
     treeSec:Button("Teleport To Tree", function()
         local logs = getOwnedLogs()
+        if #logs == 0 then
+            warn("No owned trees found. Try clicking Refresh first.")
+            return
+        end
         local selected = logs[treeCombo.value + 1]
         if not selected then return end
         local pos = getTreePos(selected)
-        if pos then setPlayerPosition(pos) end
+        if pos then
+            setPlayerPosition(pos)
+        else
+            warn("Could not find tree position.")
+        end
     end)
 
     treeSec:Button("Teleport Tree To Dropoff", function()
         local logs = getOwnedLogs()
+        if #logs == 0 then
+            warn("No owned trees found. Try clicking Refresh first.")
+            return
+        end
         local selected = logs[treeCombo.value + 1]
         if not selected then return end
         teleportLogs(selected, teleport_locations.wood_dropoff)
     end)
 
+    -- Player Teleport
     local tpSec = tab:Section("Player Teleport", "Right")
 
     local locationNames = {}
@@ -236,7 +260,11 @@ UI.AddTab("Lumberboog", function(tab)
 
     tpSec:Button("Teleport", function()
         local pos = teleport_locations[tpCombo:GetText()]
-        if pos then setPlayerPosition(pos) end
+        if pos then
+            setPlayerPosition(pos)
+        else
+            warn("Invalid location selected.")
+        end
     end)
 
     local biomeNames = {}
@@ -248,9 +276,14 @@ UI.AddTab("Lumberboog", function(tab)
 
     tpSec:Button("Teleport Biome", function()
         local pos = biome_teleport_locations[tpBiomeCombo:GetText()]
-        if pos then setPlayerPosition(pos) end
+        if pos then
+            setPlayerPosition(pos)
+        else
+            warn("Invalid biome selected.")
+        end
     end)
 
+    -- ESP
     local espSec = tab:Section("ESP", "Left")
 
     espSec:Toggle("ownedlogesp_enabled", "Owned Log ESP", false, function(v)
