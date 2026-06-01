@@ -2,7 +2,7 @@
 local isOwnedLogsEspEnabled = UI.GetValue("ownedlogesp_enabled") or false
 local ownedLogNameColor = Color3.fromRGB(0, 255, 0)
 local isAutoFarming = false
-local selectedFarmTrees = {}
+local farmList = {}
 
 -- Workspaces
 local player = game.Players.LocalPlayer
@@ -48,7 +48,7 @@ function getOwnedLogs()
 	return ownedLogs
 end
 
--- Check if specified tree is owned (For ESP)
+-- Check if specified tree is owned
 function isOwnedTree(tree)
 	local owner = tree:FindFirstChild("Owner")
 	local ownerString = owner and owner:FindFirstChild("OwnerString")
@@ -62,13 +62,7 @@ function setPlayerPosition(position)
 	rootPart.CFrame = CFrame.new(position.X, position.Y, position.Z)
 end
 
--- Get Player Position
-function getPlayerPosition()
-	local rootPart = character:WaitForChild("HumanoidRootPart")
-	return rootPart.Position
-end
-
--- Get tree names (From owned logs for combobox)
+-- Get tree names
 function getTreeNames()
 	local tree_names = {}
 	for _, tree in ipairs(getOwnedLogs()) do
@@ -100,85 +94,71 @@ function teleportLogs(log, pos)
 	end
 end
 
--- Equip slot 1 (axe) and chop tree
+-- Chop tree by simulating input
 function chopTree(tree)
 	local pos = getTreePos(tree)
 	if not pos then return end
 
-	-- Teleport to tree
+	-- Teleport next to tree
 	setPlayerPosition(Vector3.new(pos.X + 3, pos.Y, pos.Z))
 	task.wait(0.5)
 
-	-- Press 1 to equip axe (Windows VK code 49 = key '1')
+	-- Press 1 to equip axe
 	keypress(49)
 	task.wait(0.1)
 	keyrelease(49)
 	task.wait(0.3)
 
-	-- Enable input to game
+	-- Send inputs to game and swing for 30 seconds
 	setrobloxinput(true)
-
-	-- Swing axe repeatedly for 30 seconds (enough to chop most trees)
-	local chopTime = 30
 	local elapsed = 0
-	while elapsed < chopTime do
+	while elapsed < 30 do
+		if not isAutoFarming then break end
+		if not tree.Parent then break end
 		mouse1click()
 		task.wait(0.5)
 		elapsed = elapsed + 0.5
-
-		-- Stop early if tree is gone
-		if not tree.Parent then
-			break
-		end
 	end
-
-	-- Disable input back
 	setrobloxinput(false)
 
-	-- Wait a moment for logs to settle
 	task.wait(2)
 end
 
 -- Auto farm loop
-function startAutoFarm(treeNames)
+function startAutoFarm()
 	isAutoFarming = true
 	task.spawn(function()
 		while isAutoFarming do
-			local logs = getOwnedLogs()
-
-			-- Filter to only selected trees
-			local toFarm = {}
-			for _, tree in ipairs(logs) do
-				for _, name in ipairs(treeNames) do
-					if tree.Name == name then
-						table.insert(toFarm, tree)
-						break
-					end
-				end
-			end
-
-			if #toFarm == 0 then
+			if #farmList == 0 then
 				task.wait(2)
 			else
-				for _, tree in ipairs(toFarm) do
-					if not isAutoFarming then break end
-
-					-- Chop the tree
-					chopTree(tree)
-
-					if not isAutoFarming then break end
-
-					-- Teleport logs to dropoff
-					-- Re-fetch logs since tree may have changed after chopping
-					local updatedLogs = getOwnedLogs()
-					for _, log in ipairs(updatedLogs) do
-						if log.Name == tree.Name then
-							teleportLogs(log, teleport_locations.wood_dropoff)
+				local logs = getOwnedLogs()
+				local toFarm = {}
+				for _, tree in ipairs(logs) do
+					for _, name in ipairs(farmList) do
+						if tree.Name == name then
+							table.insert(toFarm, tree)
 							break
 						end
 					end
+				end
 
-					task.wait(1)
+				if #toFarm == 0 then
+					task.wait(2)
+				else
+					for _, tree in ipairs(toFarm) do
+						if not isAutoFarming then break end
+						chopTree(tree)
+						if not isAutoFarming then break end
+						-- Re-fetch and teleport logs to dropoff
+						for _, log in ipairs(getOwnedLogs()) do
+							if log.Name == tree.Name then
+								teleportLogs(log, teleport_locations.wood_dropoff)
+								break
+							end
+						end
+						task.wait(1)
+					end
 				end
 			end
 		end
@@ -203,10 +183,7 @@ local function addEspItem(part)
 	txt.Outline = true
 	txt.Color = Color3.fromRGB(0, 255, 0)
 	txt.Visible = false
-	espList[addr] = {
-		part = part,
-		txt = txt
-	}
+	espList[addr] = { part = part, txt = txt }
 end
 
 local function removeEspItem(addr)
@@ -290,9 +267,7 @@ UI.AddTab("Lumberboog", function(tab)
 		local selected = logs[idx]
 		if not selected then return end
 		local pos = getTreePos(selected)
-		if pos then
-			setPlayerPosition(pos)
-		end
+		if pos then setPlayerPosition(pos) end
 	end)
 
 	tree_teleport_Sec:Button("Teleport Tree To Dropoff", function()
@@ -307,7 +282,7 @@ UI.AddTab("Lumberboog", function(tab)
 	local auto_farm_sec = tab:Section("Auto Farm", "Left")
 
 	local farmTreeNames = getTreeNames()
-	local farmTreeCombo = auto_farm_sec:Combo("farm_tree_select", "Select Trees", farmTreeNames, 0)
+	local farmTreeCombo = auto_farm_sec:Combo("farm_tree_select", "Select Tree", farmTreeNames, 0)
 
 	auto_farm_sec:Button("Refresh Trees", function()
 		farmTreeCombo:Clear()
@@ -316,29 +291,23 @@ UI.AddTab("Lumberboog", function(tab)
 		end
 	end)
 
-	-- Add/remove trees from farm list
-	local farmList = {}
-	local farmListLabel = auto_farm_sec:Label("farm_list_label", "Farm list: none")
-
 	auto_farm_sec:Button("Add To Farm List", function()
 		local name = farmTreeCombo:GetText()
-		if name == "" then return end
+		if not name or name == "" then return end
 		for _, n in ipairs(farmList) do
 			if n == name then return end
 		end
 		table.insert(farmList, name)
-		farmListLabel:SetText("Farm list: " .. table.concat(farmList, ", "))
 	end)
 
 	auto_farm_sec:Button("Clear Farm List", function()
 		farmList = {}
-		farmListLabel:SetText("Farm list: none")
 	end)
 
 	auto_farm_sec:Button("Start Auto Farm", function()
 		if isAutoFarming then return end
 		if #farmList == 0 then return end
-		startAutoFarm(farmList)
+		startAutoFarm()
 	end)
 
 	auto_farm_sec:Button("Stop Auto Farm", function()
@@ -358,9 +327,7 @@ UI.AddTab("Lumberboog", function(tab)
 	player_teleport_sec:Button("Teleport", function()
 		local selectedName = tpCombo:GetText()
 		local position = teleport_locations[selectedName]
-		if position then
-			setPlayerPosition(position)
-		end
+		if position then setPlayerPosition(position) end
 	end)
 
 	local teleportBiomesNames = {}
@@ -373,9 +340,7 @@ UI.AddTab("Lumberboog", function(tab)
 	player_teleport_sec:Button("Teleport Biome", function()
 		local selectedName = tpBiomeCombo:GetText()
 		local position = biome_teleport_locations[selectedName]
-		if position then
-			setPlayerPosition(position)
-		end
+		if position then setPlayerPosition(position) end
 	end)
 
 	-- ESP Section
