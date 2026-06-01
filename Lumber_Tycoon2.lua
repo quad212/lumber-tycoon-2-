@@ -192,23 +192,18 @@ UI.AddTab("Lumberboog", function(tab)
         end
     end)
 
-    tree_teleport_Sec:Button("Teleport To Tree", function()
-        local logs = getOwnedLogs()
-        print("Owned logs found:", #logs)
-        local idx = ownedTreesCombo.value + 1
-        print("Selected index:", idx)
-        local selected = logs[idx]
-        if not selected then
-            print("No tree selected")
-            return
+   tree_teleport_Sec:Button("Teleport To Tree", function()
+    print("LogModels children:", #logModels:GetChildren())
+    for _, tree in ipairs(logModels:GetChildren()) do
+        print("Tree:", tree.Name)
+        local owner = tree:FindFirstChild("Owner")
+        print("Has Owner:", owner ~= nil)
+        if owner then
+            local ownerString = owner:FindFirstChild("OwnerString")
+            print("OwnerString value:", ownerString and ownerString.Value or "nil")
         end
-        local pos = getTreePos(selected)
-        print("Tree pos:", pos)
-        if pos then
-            setPlayerPosition(pos)
-        end
-    end)
-
+    end
+end)
 	tree_teleport_Sec:Button("Teleport Tree To Dropoff", function()
 		local logs = getOwnedLogs()
         print("Owned logs found:", #logs)
