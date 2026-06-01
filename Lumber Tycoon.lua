@@ -19,17 +19,17 @@ local teleport_locations = {
 }
 
 local biome_teleport_locations = {
-	main_biome        = Vector3.new(-135.86, 22, 205.03),
-	safari            = Vector3.new(-118.07, 3, -1904.73),
-	swamp             = Vector3.new(-1029.14, 131.60, -1145.41),
-	mountainside      = Vector3.new(-1163.08, 295.40, 838.99),
-	cherry_meadow     = Vector3.new(223.42, 59.80, 1277.99),
-	taiga             = Vector3.new(953.96, 59.80, 1827.92),
-	taiga_dugout      = Vector3.new(1472.59, 412.37, 3258.63),
-	tropics           = Vector3.new(4887.97, 2.80, -80.78),
-	main_sand_island  = Vector3.new(2589.36, -5.90, -23.58),
+	main_biome          = Vector3.new(-135.86, 22, 205.03),
+	safari              = Vector3.new(-118.07, 3, -1904.73),
+	swamp               = Vector3.new(-1029.14, 131.60, -1145.41),
+	mountainside        = Vector3.new(-1163.08, 295.40, 838.99),
+	cherry_meadow       = Vector3.new(223.42, 59.80, 1277.99),
+	taiga               = Vector3.new(953.96, 59.80, 1827.92),
+	taiga_dugout        = Vector3.new(1472.59, 412.37, 3258.63),
+	tropics             = Vector3.new(4887.97, 2.80, -80.78),
+	main_sand_island    = Vector3.new(2589.36, -5.90, -23.58),
 	tropics_sand_island = Vector3.new(4313.09, -5.90, -1822.30),
-	volcano           = Vector3.new(-1588.55, 623, 1058.12)
+	volcano             = Vector3.new(-1588.55, 623, 1058.12)
 }
 
 -- Helper: check if a player owns a given tree
@@ -87,7 +87,7 @@ local function teleportLogs(log, pos)
 	end
 end
 
--- ─── ESP ────────────────────────────────────────────────────────────────────
+-- == ESP ==
 
 local espList = {}
 
@@ -157,7 +157,7 @@ task.spawn(function()
 	end
 end)
 
--- ─── UI ─────────────────────────────────────────────────────────────────────
+-- == UI ==
 
 UI.AddTab("Lumberboog", function(tab)
 
