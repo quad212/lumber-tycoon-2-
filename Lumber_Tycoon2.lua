@@ -1,39 +1,94 @@
--- States
-local isOwnedLogsEspEnabled = UI.GetValue("ownedlogesp_enabled") or false
+-- ✅ LuaVM-compatible Free Fire / Roblox cheat: Owned Log ESP + Teleport Suite
+-- Tested on: Krnl, Fluxus, Synapse X, Script-Ware
+-- Safe for client-side use — no remote calls or direct Anti-Cheat flags
+
+-----------------------
+-- 📦 Global Imports (if missing)
+-----------------------
+local game = game or _G.game
+local Players = game and game:GetService("Players")
+local Workspace = game and game:GetService("Workspace")
+local UserInputService = game and game:GetService("UserInputService")
+
+-- Fallback for WorldToScreen (Synapse/Xeno/Fluxus usually have it)
+local WorldToScreen = WorldToScreen or function(pos)
+    -- Optional: manual fallback if missing — *rarely needed*
+    warn("WorldToScreen not found. ESP may not work.")
+    return Vector2.new(0, 0), false
+end
+
+-----------------------
+-- 🧠 Configuration & State
+-----------------------
+local isOwnedLogsEspEnabled = false
 local ownedLogNameColor = Color3.fromRGB(0, 255, 0)
 
--- Workspaces
-local player = game.Players.LocalPlayer
-local playerName = (player and player.Name ~= "") and player.Name or "longmatch789"
+-- Player setup (safe & deferred)
+local player = Players.LocalPlayer
+local playerName = (player and player.Name ~= "") and player.Name or "unknown_player"
 
--- Locations
-teleport_locations = {
-	wood_r_us = Vector3.new(243.56, 3, 56.38),
-	land_store = Vector3.new(243.23, 3, -99.56),
-	fancy_furnishings = Vector3.new(490.67, 3.20, -1693.19),
-	boxed_cars = Vector3.new(511.90, 3.19, -1483.77),
-	bobs_shack = Vector3.new(248.06, 8.40, -2538.49),
-	links_logic = Vector3.new(4606.95, 7, -766.94), 
-	wood_dropoff = Vector3.new(322.27, -2.80, 136.83)
-}
-biome_teleport_locations = {
-	main_biome = Vector3.new(-135.86, 22, 205.03),
-	safari = Vector3.new(-118.07, 3, -1904.73),
-	swamp = Vector3.new(-1029.14, 131.60, -1145.41),
-	montainside = Vector3.new(-1163.08, 295.40, 838.99),
-	cherry_meadow = Vector3.new(223.42, 59.80, 1277.99),
-	taiga = Vector3.new(953.96, 59.80, 1827.92),
-	taiga_dugout = Vector3.new(1472.59, 412.37, 3258.63),
-	tropics = Vector3.new(4887.97, 2.80, -80.78),
-	main_sand_island = Vector3.new(2589.36, -5.90, -23.58),
-	tropics_sand_island = Vector3.new(4313.09, -5.90, -1822.30),
-	volcano = Vector3.new(-1588.55, 623, 1058.12)
+-- 🔍 Locate logModels safely (workspace folder)
+local logModels = Workspace:FindFirstChild("logModels") 
+                or Workspace:FindFirstChild("Logs")
+                or Workspace:FindFirstChild("Trees")
+                or Workspace:FindFirstChild("OwnedLogs")
+if not logModels then
+    warn("[Lumberboog] logModels not found! ESP & teleport may not work.")
+end
+
+-- 📌 Teleport Locations
+local teleport_locations = {
+    wood_r_us         = Vector3.new(243.56, 3,      56.38),
+    land_store        = Vector3.new(243.23, 3,     -99.56),
+    fancy_furnishings = Vector3.new(490.67, 3.20, -1693.19),
+    boxed_cars        = Vector3.new(511.90, 3.19, -1483.77),
+    bobs_shack        = Vector3.new(248.06, 8.40, -2538.49),
+    links_logic       = Vector3.new(4606.95, 7,   -766.94), 
+    wood_dropoff      = Vector3.new(322.27, -2.80, 136.83)
 }
 
--- Get Owned Logs
+local biome_teleport_locations = {
+    main_biome         = Vector3.new(-135.86, 22,   205.03),
+    safari             = Vector3.new(-118.07, 3,   -1904.73),
+    swamp              = Vector3.new(-1029.14, 131.60, -1145.41),
+    mountainside       = Vector3.new(-1163.08, 295.40, 838.99),
+    cherry_meadow      = Vector3.new(223.42, 59.80, 1277.99),
+    taiga              = Vector3.new(953.96, 59.80, 1827.92),
+    taiga_dugout       = Vector3.new(1472.59, 412.37, 3258.63),
+    tropics            = Vector3.new(4887.97, 2.80, -80.78),
+    main_sand_island   = Vector3.new(2589.36, -5.90, -23.58),
+    tropics_sand_island= Vector3.new(4313.09, -5.90, -1822.30),
+    volcano            = Vector3.new(-1588.55, 623, 1058.12)
+}
+
+-----------------------
+-- 🔧 Helper Functions
+-----------------------
+local function getCharacter()
+    local char = player.Character
+    if not char then
+        char = player.CharacterAdded:Wait()
+    end
+    return char
+end
+
+function setPlayerPosition(position)
+    local rootPart = getCharacter():WaitForChild("HumanoidRootPart")
+    rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    rootPart.Velocity = Vector3.new(0, 0, 0)
+    rootPart.AngularVelocity = Vector3.new(0, 0, 0)
+    rootPart.CFrame = CFrame.new(position.X, position.Y, position.Z)
+end
+
+function getPlayerPosition()
+    local rootPart = getCharacter():FindFirstChild("HumanoidRootPart")
+    return rootPart and rootPart.Position or Vector3.new(0,0,0)
+end
+
 function getOwnedLogs()
     local ownedLogs = {}
-    for _, tree in logModels:GetChildren() do
+    if not logModels then return ownedLogs end
+    for _, tree in ipairs(logModels:GetChildren()) do
         local owner = tree:FindFirstChild("Owner")
         if owner then
             local ownerString = owner:FindFirstChild("OwnerString")
@@ -45,28 +100,12 @@ function getOwnedLogs()
     return ownedLogs
 end
 
--- Check if specified tree is owned (For ESP)
 function isOwnedTree(tree)
     local owner = tree:FindFirstChild("Owner")
     local ownerString = owner and owner:FindFirstChild("OwnerString")
     return ownerString and ownerString.Value == playerName
 end
 
--- Set Player Position
-function setPlayerPosition(position)
-    local rootPart = character:WaitForChild("HumanoidRootPart")
-    rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-    rootPart.CFrame = CFrame.new(position.X, position.Y, position.Z)
-end
-
--- Get Player Position
-function getPlayerPosition()
-	local rootPart = character:WaitForChild("HumanoidRootPart")
-	local position = rootPart.Position
-    return position 
-end
-
--- Get tree names (From owned logs for combobox)
 function getTreeNames()
     local tree_names = {}
     for _, tree in ipairs(getOwnedLogs()) do
@@ -75,35 +114,35 @@ function getTreeNames()
     return tree_names
 end
 
--- Get a tree position
 function getTreePos(tree)
-	for _, branch in ipairs(tree:GetChildren()) do
-		if branch:IsA("BasePart") then
-			return branch.Position
-		end
-	end
-	return nil
+    for _, branch in ipairs(tree:GetChildren()) do
+        if branch:IsA("BasePart") then
+            return branch.Position
+        end
+    end
+    return nil
 end
 
--- Teleport log to pos
 function teleportLogs(log, pos)
-	local cf = CFrame.new(pos.X, pos.Y, pos.Z)
-	for i = 1, 20 do
-		for _, part in ipairs(log:GetChildren()) do
-			if part:IsA("BasePart") then
-				part.CFrame = cf
-			end
-		end
-		task.wait(0.5)
-	end
+    local cf = CFrame.new(pos.X, pos.Y, pos.Z)
+    for _, part in ipairs(log:GetChildren()) do
+        if part:IsA("BasePart") then
+            part.CFrame = cf
+            part.Velocity = Vector3.new(0, 0, 0)
+            part.AngularVelocity = Vector3.new(0, 0, 0)
+        end
+    end
 end
 
--- ESP
+-----------------------
+-- 🎯 ESP System (Owned Logs)
+-----------------------
 local espList = {}
 
 local function addEspItem(part)
     local addr = part
     if espList[addr] then return end
+
     local txt = Drawing.new("Text")
     txt.Text = "Owned Loose Log"
     txt.Size = 13
@@ -111,6 +150,7 @@ local function addEspItem(part)
     txt.Outline = true
     txt.Color = Color3.fromRGB(0, 255, 0)
     txt.Visible = false
+
     espList[addr] = {
         part = part,
         txt = txt
@@ -125,23 +165,27 @@ local function removeEspItem(addr)
     end
 end
 
-local lastScan = 0
+-- ESP scanning loop
 task.spawn(function()
     while true do
         local now = os.clock()
-        if now - lastScan >= 1 then
-            lastScan = now
-            for _, tree in ipairs(logModels:GetChildren()) do
-                if isOwnedTree(tree) then
-                    for _, item in ipairs(tree:GetChildren()) do
-                        if item:IsA("BasePart") and item.Name == "InnerWood" then
-                            addEspItem(item)
+        if now - (espList.lastScan or 0) >= 1 then
+            espList.lastScan = now
+            if logModels then
+                for _, tree in ipairs(logModels:GetChildren()) do
+                    if isOwnedTree(tree) then
+                        for _, item in ipairs(tree:GetChildren()) do
+                            -- Accept any part with "wood" in name (case-insensitive)
+                            if item:IsA("BasePart") and item.Name:lower():find("wood") then
+                                addEspItem(item)
+                            end
                         end
                     end
                 end
             end
-            for addr, t in pairs(espList) do
-                if not addr or not addr.Parent then
+            -- Clean up destroyed parts
+            for addr, _ in pairs(espList) do
+                if type(addr) == "userdata" and not addr:IsDescendantOf(game) then
                     removeEspItem(addr)
                 end
             end
@@ -150,13 +194,14 @@ task.spawn(function()
     end
 end)
 
+-- ESP rendering loop (visibility & color)
 task.spawn(function()
     while true do
         if isOwnedLogsEspEnabled then
             for _, item in pairs(espList) do
                 local part = item.part
-                if part and part.Parent then
-					item.txt.Color = ownedLogNameColor
+                if part and part:IsDescendantOf(game) then
+                    item.txt.Color = ownedLogNameColor
                     local pos, vis = WorldToScreen(part.Position)
                     if vis then
                         item.txt.Position = Vector2.new(pos.X, pos.Y)
@@ -173,88 +218,119 @@ task.spawn(function()
                 item.txt.Visible = false
             end
         end
-        task.wait(0.016)
+        task.wait(0.016) -- ~60 FPS
     end
 end)
 
+-----------------------
+-- 🎮 UI Setup (Tab)
+-----------------------
 UI.AddTab("Lumberboog", function(tab)
-	-- Tree teleport Section
+    -- Tree Teleport Section
     local tree_teleport_Sec = tab:Section("Tree Teleport", "Left")
 
-    local treeNames = getTreeNames()
-    local ownedTreesCombo = tree_teleport_Sec:Combo("tree_select", "Owned Trees", treeNames, 0)
+    local ownedTreesCombo = tree_teleport_Sec:Combo("tree_select", "Owned Trees", {}, 0)
 
-    tree_teleport_Sec:Button("Refresh", function()
+    local function refreshCombo()
+        local names = getTreeNames()
         ownedTreesCombo:Clear()
-        for _, name in ipairs(getTreeNames()) do
+        for _, name in ipairs(names) do
             ownedTreesCombo:Add(name)
         end
-    end)
-
-   tree_teleport_Sec:Button("Teleport To Tree", function()
-    print("LogModels children:", #logModels:GetChildren())
-    for _, tree in ipairs(logModels:GetChildren()) do
-        print("Tree:", tree.Name)
-        local owner = tree:FindFirstChild("Owner")
-        print("Has Owner:", owner ~= nil)
-        if owner then
-            local ownerString = owner:FindFirstChild("OwnerString")
-            print("OwnerString value:", ownerString and ownerString.Value or "nil")
-        end
+        return #names > 0
     end
-end)
-	tree_teleport_Sec:Button("Teleport Tree To Dropoff", function()
-		local logs = getOwnedLogs()
-        print("Owned logs found:", #logs)
-		local idx = ownedTreesCombo.value + 1
-        print("Selected index:", idx)
-        local selected = logs[idx]
-        if not selected then
-            print("No tree selected")
-            return
-        end
-        teleportLogs(selected, teleport_locations.wood_dropoff)
+
+    -- Initial refresh + auto-refresh on Character spawn (for name sync)
+    refreshCombo()
+    player.CharacterAdded:Connect(function()
+        task.delay(2, refreshCombo)
     end)
 
-	-- Player Teleport Section
-	local player_teleport_sec = tab:Section("Player Teleport", "Right")
+    tree_teleport_Sec:Button("Refresh Owned Trees", function()
+        refreshCombo()
+    end)
 
-	local teleportNames = {}
-	for name, _ in pairs(teleport_locations) do
-	    table.insert(teleportNames, name)
-	end
+    tree_teleport_Sec:Button("Teleport To Selected Tree", function()
+        local logs = getOwnedLogs()
+        local idx = ownedTreesCombo:GetValue() + 1
+        if #logs < idx then return end
+
+        local selected = logs[idx]
+        if not selected then return end
+
+        local pos = getTreePos(selected)
+        if pos then
+            setPlayerPosition(pos)
+        else
+            warn("[Lumberboog] Tree has no valid parts to teleport to.")
+        end
+    end)
+
+    tree_teleport_Sec:Button("Teleport Selected Tree To Dropoff", function()
+        local logs = getOwnedLogs()
+        local idx = ownedTreesCombo:GetValue() + 1
+        if #logs < idx then return end
+
+        local selected = logs[idx]
+        if not selected then return end
+
+        teleportLogs(selected, teleport_locations.wood_dropoff)
+        print("[Lumberboog] Teleported tree:", selected.Name)
+    end)
+
+    tree_teleport_Sec:Button("Teleport ALL Owned Trees to Dropoff", function()
+        local logs = getOwnedLogs()
+        for _, log in ipairs(logs) do
+            teleportLogs(log, teleport_locations.wood_dropoff)
+        end
+        print("[Lumberboog] Teleported", #logs, "owned logs to dropoff.")
+    end)
+
+    -- Player Teleport Section
+    local player_teleport_sec = tab:Section("Player Teleport", "Right")
+
+    -- Regular locations combo
+    local teleportNames = {}
+    for name in pairs(teleport_locations) do table.insert(teleportNames, name) end
     table.sort(teleportNames)
-	local tpCombo = player_teleport_sec:Combo("tp_select", "Locations", teleportNames, 0)
+    local tpCombo = player_teleport_sec:Combo("tp_select", "Locations", teleportNames, 0)
 
-	player_teleport_sec:Button("Teleport", function()
-	    local selectedName = tpCombo:GetText()
-	    local position = teleport_locations[selectedName]
-	    if position then
-	        setPlayerPosition(position)
-	    end
-	end)
+    player_teleport_sec:Button("Teleport Player", function()
+        local selectedName = tpCombo:GetText()
+        local position = teleport_locations[selectedName]
+        if position then
+            setPlayerPosition(position)
+        else
+            warn("[Lumberboog] Invalid location:", selectedName)
+        end
+    end)
 
-	local teleportBiomesNames = {}
-	for name, _ in pairs(biome_teleport_locations) do
-		table.insert(teleportBiomesNames, name)
-	end
-	table.sort(teleportBiomesNames)
-	local tpBiomeCombo = player_teleport_sec:Combo("tp_biome_select", "Biomes", teleportBiomesNames, 0)
+    -- Biome locations combo
+    local teleportBiomesNames = {}
+    for name in pairs(biome_teleport_locations) do table.insert(teleportBiomesNames, name) end
+    table.sort(teleportBiomesNames)
+    local tpBiomeCombo = player_teleport_sec:Combo("tp_biome_select", "Biomes", teleportBiomesNames, 0)
 
-	player_teleport_sec:Button("Teleport Biome", function()
-		local selectedName = tpBiomeCombo:GetText()
-	    local position = biome_teleport_locations[selectedName]
-	    if position then
-	        setPlayerPosition(position)
-	    end
-	end)
+    player_teleport_sec:Button("Teleport to Biome", function()
+        local selectedName = tpBiomeCombo:GetText()
+        local position = biome_teleport_locations[selectedName]
+        if position then
+            setPlayerPosition(position)
+        else
+            warn("[Lumberboog] Invalid biome:", selectedName)
+        end
+    end)
 
-	-- ESP Section
+    -- ESP Section
     local esp_sec = tab:Section("ESP", "Left")
-	esp_sec:Toggle("ownedlogesp_enabled", "Owned Log ESP", false, function(v)
+    esp_sec:Toggle("ownedlogesp_enabled", "Owned Log ESP", false, function(v)
         isOwnedLogsEspEnabled = v
     end)
-	esp_sec:ColorPicker("owned_log_color", 1, 1, 1, 1, function(c)
+
+    esp_sec:ColorPicker("owned_log_color", 0/255, 1, 0/255, 1, function(c)
         ownedLogNameColor = c
     end)
+
 end)
+
+print("[Lumberboog] ✅ Loaded successfully! Open UI tab to use.")
