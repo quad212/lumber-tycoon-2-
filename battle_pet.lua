@@ -1,6 +1,6 @@
 -- ============================================================
 --  Battle Pet  |  QoL Script  (PlaceId: 81272814168643)
---  Executor: Synapse X / KRNL / Fluxus compatible
+--  Executor: Universal / Synapse X / KRNL / Fluxus / Mobile compatible
 -- ============================================================
 --  Features:
 --    ✅ Auto Battle       – fires StartBattle remote repeatedly
@@ -16,6 +16,7 @@ local RS            = game:GetService("ReplicatedStorage")
 local RunService    = game:GetService("RunService")
 local TweenService  = game:GetService("TweenService")
 local UIS           = game:GetService("UserInputService")
+local SoundService  = game:GetService("SoundService")
 local LP            = Players.LocalPlayer
 local PGui          = LP:WaitForChild("PlayerGui")
 
@@ -81,36 +82,43 @@ local function SetSpeed(fast)
 end
 
 -- ============================================================
---  AUDIO / MUTE CONTROLLER
+--  AUDIO / MUTE CONTROLLER (Universal Listener Engine)
 -- ============================================================
-local SoundHook
-SoundHook = hookfunction(Instance.new("Sound").Play, function(self)
-    if Config.MutePopups then
-        -- Mutes common UI notification/claim sound identifiers
-        local name = string.lower(self.Name)
-        if name:find("popup") or name:find("claim") or name:find("reward") or name:find("notification") or name:find("win") then
-            self.Volume = 0
-            return
+local function HandleSound(sound)
+    if sound:IsA("Sound") then
+        local function checkMute()
+            if Config.MutePopups then
+                local name = string.lower(sound.Name)
+                if name:find("popup") or name:find("claim") or name:find("reward") or name:find("notification") or name:find("win") then
+                    sound.Volume = 0
+                end
+            end
         end
+        sound:GetPropertyChangedSignal("Playing"):Connect(function()
+            if sound.Playing then checkMute() end
+        end)
+        if sound.Playing then checkMute() end
     end
-    return SoundHook(self)
-end)
+end
+
+-- Listen everywhere game sounds typically spawn
+game.DescendantAdded:Connect(HandleSound)
+for _, desc in ipairs(game:GetDescendants()) do
+    task.spawn(HandleSound, desc)
+end
 
 -- ============================================================
 --  AUTO BATTLE LOOP
 -- ============================================================
--- Listen for BattleEnded → auto-claim + re-queue
 S_BattleEnded.Event:Connect(function()
     inBattle = false
     battleCount += 1
 
-    -- update HUD counter
-    task.wait(0.5) -- let the result screen appear
+    task.wait(0.5)
 
     if Config.AutoClaim then
         task.wait(0.3)
         ClaimRewards()
-        -- also click the "None" / skip button in the result UI if present
         pcall(function()
             local btn = PGui:FindFirstChild("Round", true)
             if btn then
@@ -127,7 +135,6 @@ S_BattleEnded.Event:Connect(function()
     end
 end)
 
--- Track when a battle starts
 S_BattlePrepared.Event:Connect(function()
     inBattle = true
     if Config.FastSpeed then SetSpeed(true) end
@@ -136,7 +143,6 @@ end)
 -- ============================================================
 --  GUI
 -- ============================================================
--- Destroy existing GUI if re-executing
 if PGui:FindFirstChild("BattlePetQoL_GUI") then
     PGui:FindFirstChild("BattlePetQoL_GUI"):Destroy()
 end
@@ -147,14 +153,18 @@ ScreenGui.ResetOnSpawn      = false
 ScreenGui.ZIndexBehavior    = Enum.ZIndexBehavior.Sibling
 ScreenGui.DisplayOrder      = 999
 
-pcall(function() syn.protect_gui(ScreenGui) end)
+-- Compatibility safeguards for protected GUIs
+pcall(function() 
+    if syn and syn.protect_gui then 
+        syn.protect_gui(ScreenGui) 
+    end 
+end)
 pcall(function() ScreenGui.Parent = game:GetService("CoreGui") end)
 if not ScreenGui.Parent then ScreenGui.Parent = PGui end
 
--- Main window
 local Main = Instance.new("Frame", ScreenGui)
 Main.Name              = "Main"
-Main.Size              = UDim2.new(0, 220, 0, 340) -- Adjusted height slightly for layout breathing room
+Main.Size              = UDim2.new(0, 220, 0, 340)
 Main.Position          = UDim2.new(0, 16, 0.5, -170)
 Main.BackgroundColor3  = Color3.fromRGB(15, 15, 22)
 Main.BorderSizePixel   = 0
@@ -164,7 +174,6 @@ Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
 local mStroke = Instance.new("UIStroke", Main)
 mStroke.Color = Color3.fromRGB(80, 180, 255); mStroke.Thickness = 1.5
 
--- Title
 local TBar = Instance.new("Frame", Main)
 TBar.Size = UDim2.new(1,0,0,34); TBar.BackgroundColor3 = Color3.fromRGB(30,100,200)
 TBar.BorderSizePixel = 0
@@ -179,7 +188,6 @@ TLbl.Font = Enum.Font.GothamBold; TLbl.TextSize = 14
 TLbl.TextXAlignment = Enum.TextXAlignment.Left
 TLbl.Text = "⚔  Battle Pet  QoL"
 
--- Close button
 local CloseBtn = Instance.new("TextButton", TBar)
 CloseBtn.Size = UDim2.new(0,26,0,26); CloseBtn.Position = UDim2.new(1,-30,0,4)
 CloseBtn.BackgroundColor3 = Color3.fromRGB(180,40,40)
@@ -188,7 +196,6 @@ CloseBtn.TextSize = 13; CloseBtn.Text = "✕"; CloseBtn.BorderSizePixel = 0
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0,6)
 CloseBtn.MouseButton1Click:Connect(function() Main.Visible = false end)
 
--- Reopen hint
 local Hint = Instance.new("TextLabel", ScreenGui)
 Hint.Size = UDim2.new(0,170,0,20); Hint.Position = UDim2.new(0,16,0,6)
 Hint.BackgroundColor3 = Color3.fromRGB(15,15,22)
@@ -204,7 +211,6 @@ UIS.InputBegan:Connect(function(inp, gpe)
     end
 end)
 
--- Scroll content
 local Scroll = Instance.new("ScrollingFrame", Main)
 Scroll.Size = UDim2.new(1,-8,1,-44); Scroll.Position = UDim2.new(0,4,0,40)
 Scroll.BackgroundTransparency = 1; Scroll.ScrollBarThickness = 3
@@ -216,7 +222,6 @@ List.Padding = UDim.new(0,5); List.SortOrder = Enum.SortOrder.LayoutOrder
 local Pad = Instance.new("UIPadding", Scroll)
 Pad.PaddingTop = UDim.new(0,4); Pad.PaddingLeft = UDim.new(0,4); Pad.PaddingRight = UDim.new(0,4)
 
--- Section label helper
 local function Section(text)
     local lbl = Instance.new("TextLabel", Scroll)
     lbl.Size = UDim2.new(1,-8,0,18); lbl.BackgroundTransparency = 1
@@ -226,7 +231,6 @@ local function Section(text)
     lbl.Text = "  " .. text:upper()
 end
 
--- Toggle helper
 local function Toggle(label, icon, default, cb)
     local row = Instance.new("Frame", Scroll)
     row.Size = UDim2.new(1,-8,0,34); row.BackgroundColor3 = Color3.fromRGB(24,24,36)
@@ -269,7 +273,6 @@ local function Toggle(label, icon, default, cb)
     end)
 end
 
--- HUD stat label (live win/level display)
 local function StatRow(label, icon)
     local row = Instance.new("Frame", Scroll)
     row.Size = UDim2.new(1,-8,0,28); row.BackgroundColor3 = Color3.fromRGB(18,18,28)
@@ -324,12 +327,9 @@ Section("Stats (Live)")
 local winsLbl   = StatRow("Session Wins", "🏆")
 local battleLbl = StatRow("Battles Started", "🔢")
 
--- update HUD labels every second
 RunService.Heartbeat:Connect(function()
-    -- update battle count label
     battleLbl.Text = "🔢  Battles Started: " .. battleCount
 
-    -- pull wins from the actual in-game GUI
     pcall(function()
         local winsEl = PGui:FindFirstChild("Main", true)
         if winsEl then
@@ -346,7 +346,6 @@ end)
 
 Section("Manual Controls")
 
--- Manual equip best button
 local equipBtn = Instance.new("TextButton", Scroll)
 equipBtn.Size = UDim2.new(1,-8,0,32); equipBtn.BackgroundColor3 = Color3.fromRGB(30,80,160)
 equipBtn.TextColor3 = Color3.new(1,1,1); equipBtn.Font = Enum.Font.GothamBold
@@ -358,7 +357,6 @@ equipBtn.MouseButton1Click:Connect(function()
     Notify("Equipped best team!")
 end)
 
--- Manual queue battle button
 local queueBtn = Instance.new("TextButton", Scroll)
 queueBtn.Size = UDim2.new(1,-8,0,32); queueBtn.BackgroundColor3 = Color3.fromRGB(30,130,60)
 queueBtn.TextColor3 = Color3.new(1,1,1); queueBtn.Font = Enum.Font.GothamBold
@@ -370,7 +368,6 @@ queueBtn.MouseButton1Click:Connect(function()
     Notify("Battle queued!")
 end)
 
--- Auto-resize canvas
 List:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     Scroll.CanvasSize = UDim2.new(0, 0, 0, List.AbsoluteContentSize.Y + 15)
 end)
