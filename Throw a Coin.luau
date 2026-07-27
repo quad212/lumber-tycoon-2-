@@ -25,7 +25,7 @@ local E_TAP_GAP = 0.05
 local MENU_DELAY = 0.65
 local ONE_HOLD_TIME = 0.08
 local SALE_DELAY = 0.55
-local LOOP_DELAY = 3.0
+local LOOP_DELAY = 15
 
 local DEBUG_ENABLED = true
 
