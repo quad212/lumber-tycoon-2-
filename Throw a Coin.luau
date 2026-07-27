@@ -3,7 +3,10 @@ local Players = game:GetService("Players")
 
 local player = Players.LocalPlayer
 
--- Positions
+--==================================================
+-- SETTINGS
+--==================================================
+
 local HOME_POSITION = Vector3.new(-1176, 3.75, -149.54)
 local SELL_POSITION = Vector3.new(-1147.74, 3.20, -242.30)
 
@@ -11,33 +14,49 @@ local SELL_POSITION = Vector3.new(-1147.74, 3.20, -242.30)
 local INPUT_F = "102"
 local INPUT_G = "103"
 
--- Matcha keypress codes
-local KEY_E = 101
-local KEY_ONE = 49
+-- Windows virtual-key codes
+local KEY_E = 0x45
+local KEY_ONE = 0x31
 
 -- Timing
-local ARRIVAL_DELAY = 1.0
-local E_HOLD_TIME = 0.35
-local MENU_DELAY = 1.0
-local ONE_HOLD_TIME = 0.12
-local SALE_DELAY = 0.8
+local ARRIVAL_DELAY = 0.35
+local E_SPAM_DURATION = 1.25
+local E_TAP_GAP = 0.05
+local MENU_DELAY = 0.65
+local ONE_HOLD_TIME = 0.08
+local SALE_DELAY = 0.55
 local LOOP_DELAY = 3.0
 
--- State
+local DEBUG_ENABLED = true
+
+--==================================================
+-- STATE
+--==================================================
+
 local loopEnabled = false
 local loopRunning = false
 local toggleLocked = false
 local cycleCount = 0
+local runId = 0
+
+--==================================================
+-- LOGGING
+--==================================================
 
 local function debugPrint(...)
-	print("[DEBUG]", ...)
+	if DEBUG_ENABLED then
+		print("[DEBUG]", ...)
+	end
 end
 
 local function debugWarn(...)
 	warn("[DEBUG]", ...)
 end
 
--- Enable Matcha keyboard input
+--==================================================
+-- MATCHA SETUP
+--==================================================
+
 local setupSuccess, setupError = pcall(function()
 	setrobloxinput(true)
 end)
@@ -50,6 +69,35 @@ end
 
 debugPrint("keypress available:", type(keypress) == "function")
 debugPrint("keyrelease available:", type(keyrelease) == "function")
+
+--==================================================
+-- HELPERS
+--==================================================
+
+local function releaseAllKeys()
+	pcall(function()
+		if type(keyrelease) == "function" then
+			keyrelease(KEY_E)
+			keyrelease(KEY_ONE)
+		end
+	end)
+
+	debugPrint("Released E and 1")
+end
+
+local function isWindowFocused()
+	if type(isrbxactive) ~= "function" then
+		return true
+	end
+
+	local success, focused = pcall(isrbxactive)
+
+	if not success then
+		return true
+	end
+
+	return focused ~= false
+end
 
 local function getRootPart()
 	local character = player.Character
@@ -84,22 +132,49 @@ local function teleport(position, locationName)
 		)
 	end)
 
-	if success then
-		debugPrint(
-			"Teleported to",
-			locationName,
-			position.X,
-			position.Y,
-			position.Z
-		)
-	else
+	if not success then
 		debugWarn("Teleport failed:", err)
+		return false
 	end
 
-	return success
+	pcall(function()
+		hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+	end)
+
+	debugPrint(
+		"Teleported to",
+		locationName,
+		position.X,
+		position.Y,
+		position.Z
+	)
+
+	return true
 end
 
-local function pressKey(keyCode, keyName, holdTime)
+local function shouldContinue(currentRunId)
+	return loopEnabled and currentRunId == runId
+end
+
+local function interruptibleWait(seconds, currentRunId)
+	local endTime = tick() + seconds
+
+	while tick() < endTime do
+		if not shouldContinue(currentRunId) then
+			return false
+		end
+
+		task.wait(0.03)
+	end
+
+	return shouldContinue(currentRunId)
+end
+
+local function tapKey(keyCode, keyName, holdTime, currentRunId)
+	if not shouldContinue(currentRunId) then
+		return false
+	end
+
 	if type(keypress) ~= "function" then
 		debugWarn("keypress unavailable")
 		return false
@@ -110,100 +185,124 @@ local function pressKey(keyCode, keyName, holdTime)
 		return false
 	end
 
-	debugPrint("Key down:", keyName, "| Code:", keyCode)
-
-	local pressSuccess, pressError = pcall(function()
-		keypress(keyCode)
-	end)
-
-	if not pressSuccess then
-		debugWarn("Key down failed:", keyName, pressError)
+	if not isWindowFocused() then
+		debugWarn("Roblox window is not focused")
 		return false
 	end
 
-	task.wait(holdTime)
+	local success, err = pcall(function()
+		keypress(keyCode)
 
-	debugPrint("Key up:", keyName, "| Code:", keyCode)
+		local endTime = tick() + (holdTime or 0.05)
 
-	local releaseSuccess, releaseError = pcall(function()
+		while tick() < endTime do
+			if not shouldContinue(currentRunId) then
+				break
+			end
+
+			task.wait(0.01)
+		end
+
 		keyrelease(keyCode)
 	end)
 
-	if not releaseSuccess then
-		debugWarn("Key release failed:", keyName, releaseError)
+	pcall(function()
+		keyrelease(keyCode)
+	end)
 
-		pcall(function()
-			keyrelease(keyCode)
-		end)
-
+	if not success then
+		debugWarn("Key failed:", keyName, err)
 		return false
 	end
 
-	debugPrint("Key completed:", keyName)
+	if not shouldContinue(currentRunId) then
+		return false
+	end
+
+	debugPrint("Tapped key:", keyName)
 	return true
 end
 
-local function waitWhileEnabled(seconds)
-	local elapsed = 0
+local function spamE(currentRunId)
+	if type(keypress) ~= "function"
+		or type(keyrelease) ~= "function" then
 
-	while elapsed < seconds do
-		if not loopEnabled then
-			return false
-		end
-
-		local step = math.min(0.05, seconds - elapsed)
-
-		task.wait(step)
-		elapsed = elapsed + step
+		debugWarn("Keyboard functions unavailable")
+		return false
 	end
 
-	return loopEnabled
+	debugPrint("Starting E spam")
+
+	local startedAt = tick()
+	local tapCount = 0
+
+	while shouldContinue(currentRunId)
+		and tick() - startedAt < E_SPAM_DURATION do
+
+		if isWindowFocused() then
+			local success = pcall(function()
+				keypress(KEY_E)
+				task.wait(0.02)
+				keyrelease(KEY_E)
+			end)
+
+			if success then
+				tapCount = tapCount + 1
+			end
+		end
+
+		if not interruptibleWait(E_TAP_GAP, currentRunId) then
+			break
+		end
+	end
+
+	pcall(function()
+		keyrelease(KEY_E)
+	end)
+
+	debugPrint("E spam finished | Taps:", tapCount)
+
+	return shouldContinue(currentRunId) and tapCount > 0
 end
 
-local function runSellCycle()
+--==================================================
+-- SELL CYCLE
+--==================================================
+
+local function runSellCycle(currentRunId)
+	if not shouldContinue(currentRunId) then
+		return false
+	end
+
 	cycleCount = cycleCount + 1
 	debugPrint("Starting cycle:", cycleCount)
 
-	-- Teleport to sell location
 	if not teleport(SELL_POSITION, "SELL") then
 		return false
 	end
 
-	debugPrint("Waiting at sell location")
-
-	if not waitWhileEnabled(ARRIVAL_DELAY) then
+	if not interruptibleWait(ARRIVAL_DELAY, currentRunId) then
 		return false
 	end
 
-	-- Press and hold E
-	debugPrint("Pressing E")
-
-	if not pressKey(KEY_E, "E", E_HOLD_TIME) then
+	if not spamE(currentRunId) then
 		return false
 	end
 
-	-- Wait for menu to open after E is released
-	debugPrint("E released; waiting for menu")
-
-	if not waitWhileEnabled(MENU_DELAY) then
+	if not interruptibleWait(MENU_DELAY, currentRunId) then
 		return false
 	end
 
-	-- Press 1
 	debugPrint("Pressing 1")
 
-	if not pressKey(KEY_ONE, "1", ONE_HOLD_TIME) then
+	if not tapKey(KEY_ONE, "1", ONE_HOLD_TIME, currentRunId) then
 		return false
 	end
 
-	-- Wait before leaving
-	debugPrint("1 released; waiting for sale")
-
-	if not waitWhileEnabled(SALE_DELAY) then
+	if not interruptibleWait(SALE_DELAY, currentRunId) then
 		return false
 	end
 
-	-- Return home only after E and 1 finish
 	if not teleport(HOME_POSITION, "HOME") then
 		return false
 	end
@@ -212,48 +311,74 @@ local function runSellCycle()
 	return true
 end
 
+--==================================================
+-- LOOP CONTROL
+--==================================================
+
 local function startLoop()
 	if loopRunning then
+		debugPrint("Loop already running")
 		return
 	end
 
 	loopRunning = true
+
+	local currentRunId = runId
+
 	debugPrint("Sell loop started")
 
 	task.spawn(function()
-		while loopEnabled do
-			local success = runSellCycle()
+		while shouldContinue(currentRunId) do
+			local success = runSellCycle(currentRunId)
 
-			if not success and loopEnabled then
-				debugWarn("Cycle failed; retrying in 1 second")
+			if not shouldContinue(currentRunId) then
+				break
+			end
 
-				if not waitWhileEnabled(1) then
+			if not success then
+				debugWarn("Cycle failed; retrying")
+
+				if not interruptibleWait(1, currentRunId) then
 					break
 				end
-			elseif loopEnabled then
+			else
 				debugPrint(
 					"Waiting",
 					LOOP_DELAY,
 					"seconds before next cycle"
 				)
 
-				if not waitWhileEnabled(LOOP_DELAY) then
+				if not interruptibleWait(LOOP_DELAY, currentRunId) then
 					break
 				end
 			end
 		end
 
-		-- Release keys in case the loop stops during a press
-		pcall(function()
-			if type(keyrelease) == "function" then
-				keyrelease(KEY_E)
-				keyrelease(KEY_ONE)
-			end
-		end)
+		releaseAllKeys()
 
-		loopRunning = false
-		debugPrint("Sell loop stopped")
+		if currentRunId == runId then
+			loopRunning = false
+		else
+			loopRunning = false
+		end
+
+		debugPrint("Sell loop fully stopped")
 	end)
+end
+
+local function stopEverything()
+	loopEnabled = false
+	runId = runId + 1
+
+	debugPrint("Stopping everything")
+
+	releaseAllKeys()
+
+	task.spawn(function()
+		teleport(HOME_POSITION, "HOME")
+	end)
+
+	debugPrint("LOOP OFF")
 end
 
 local function toggleLoop()
@@ -262,19 +387,25 @@ local function toggleLoop()
 	end
 
 	toggleLocked = true
-	loopEnabled = not loopEnabled
 
 	if loopEnabled then
+		stopEverything()
+	else
+		runId = runId + 1
+		loopEnabled = true
+
 		debugPrint("LOOP ON")
 		startLoop()
-	else
-		debugPrint("LOOP OFF")
 	end
 
 	task.delay(0.3, function()
 		toggleLocked = false
 	end)
 end
+
+--==================================================
+-- KEYBINDS
+--==================================================
 
 local inputEvent = UIS.InputBegan
 
@@ -288,18 +419,14 @@ else
 
 		local key = tostring(input.KeyCode)
 
-		-- F manually teleports home
+		-- F manually stops everything and returns home
 		if key == INPUT_F then
 			debugPrint("F pressed")
-
-			task.spawn(function()
-				teleport(HOME_POSITION, "HOME")
-			end)
-
+			stopEverything()
 			return
 		end
 
-		-- G toggles automatic selling
+		-- G toggles everything
 		if key == INPUT_G then
 			toggleLoop()
 		end
@@ -309,5 +436,5 @@ else
 end
 
 debugPrint("Script fully loaded")
-debugPrint("F = teleport home")
-debugPrint("G = toggle sell loop")
+debugPrint("F = stop and teleport home")
+debugPrint("G = toggle everything")
